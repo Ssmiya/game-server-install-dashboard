@@ -1,0 +1,196 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0d0e12">
+  <title>GameDeck — 游戏服务端控制台</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+</head>
+<body>
+  <div class="ambient ambient-one"></div>
+  <div class="ambient ambient-two"></div>
+
+  <div class="app-shell" id="app">
+    <aside class="game-rail" aria-label="游戏列表">
+      <button class="brand-mark" aria-label="GameDeck 首页">
+        <span></span><span></span><span></span>
+      </button>
+      <div class="rail-divider"></div>
+      <nav id="game-nav" class="game-nav"></nav>
+      <div class="rail-spacer"></div>
+      <button class="rail-button muted" title="添加游戏" aria-label="添加游戏">＋</button>
+      <button class="rail-button muted" title="设置" aria-label="设置">⚙</button>
+    </aside>
+
+    <main class="workspace">
+      <header class="topbar">
+        <div>
+          <div class="eyebrow" id="game-eyebrow">DEDICATED SERVER</div>
+          <div class="title-line">
+            <h1 id="game-title">正在载入</h1>
+            <span class="status-pill" id="status-pill"><span class="status-dot"></span><span>检查中</span></span>
+          </div>
+        </div>
+        <div class="top-actions">
+          <button class="theme-toggle" id="theme-toggle" aria-label="切换浅色模式" title="切换明暗模式">
+            <span class="theme-icon sun">☀</span>
+            <span class="theme-icon moon">☾</span>
+          </button>
+          {% if demo_mode %}
+          <span class="demo-badge">演示模式</span>
+          {% endif %}
+          <button class="button secondary" id="stop-button">停止</button>
+          <button class="button secondary" id="restart-button">重启</button>
+          <button class="button primary" id="start-button">启动服务</button>
+        </div>
+      </header>
+
+      <div class="tabbar" role="tablist">
+        <button class="tab active" data-tab="overview">概览</button>
+        <button class="tab" data-tab="setup">安装与更新</button>
+        <button class="tab" data-tab="config">参数配置</button>
+        <button class="tab" data-tab="raw">原始文件</button>
+      </div>
+
+      <section class="page-panel active" id="panel-overview">
+        <div class="bento-grid">
+          <article class="hero-card card">
+            <div class="card-label">服务状态</div>
+            <div class="hero-status">
+              <div class="pulse-orb" id="pulse-orb"><span></span></div>
+              <div>
+                <strong id="hero-state">运行中</strong>
+                <p id="hero-subtitle">世界正在等待玩家加入</p>
+              </div>
+            </div>
+            <div class="quick-stats">
+              <div><span>在线玩家</span><strong id="players">0 / 0</strong></div>
+              <div><span>运行时间</span><strong id="uptime">—</strong></div>
+              <div><span>游戏端口</span><strong id="port">—</strong></div>
+            </div>
+          </article>
+
+          <article class="version-card card">
+            <div class="card-head">
+              <span class="card-label">服务端版本</span>
+              <span class="tiny-chip" id="version-chip">可更新</span>
+            </div>
+            <strong class="version-number" id="current-version">—</strong>
+            <p>最新版本 <span id="latest-version">—</span></p>
+            <button class="text-button" data-action="update">检查并更新 <span>↗</span></button>
+          </article>
+
+          <article class="resource-card card">
+            <div class="card-label">当前资源</div>
+            <div class="resource-row">
+              <div class="ring" id="cpu-ring"><span id="cpu-value">0%</span></div>
+              <div><span>CPU</span><strong id="cpu-label">0%</strong></div>
+            </div>
+            <div class="resource-row memory-row">
+              <div class="meter"><i id="memory-meter"></i></div>
+              <div><span>内存</span><strong id="memory-label">0 GB</strong></div>
+            </div>
+          </article>
+
+          <article class="details-card card">
+            <div class="card-head">
+              <span class="card-label">实例信息</span>
+              <span class="signal">本机</span>
+            </div>
+            <dl>
+              <div><dt>安装目录</dt><dd id="install-dir">—</dd></div>
+              <div><dt>配置文件</dt><dd id="config-name">—</dd></div>
+              <div><dt>服务名称</dt><dd id="service-name">—</dd></div>
+            </dl>
+          </article>
+
+          <article class="activity-card card">
+            <div class="card-head">
+              <span class="card-label">最近活动</span>
+              <button class="icon-button" aria-label="更多">···</button>
+            </div>
+            <div class="activity-list">
+              <div><span class="activity-icon success">✓</span><div><strong>配置已载入</strong><p>所有参数校验通过</p></div><time>刚刚</time></div>
+              <div><span class="activity-icon">↻</span><div><strong>自动检查版本</strong><p>发现一个可用更新</p></div><time>12 分钟前</time></div>
+              <div><span class="activity-icon">▶</span><div><strong>服务启动</strong><p>游戏进程运行正常</p></div><time>2 天前</time></div>
+            </div>
+          </article>
+        </div>
+      </section>
+
+      <section class="page-panel" id="panel-setup">
+        <div class="section-heading">
+          <div><span class="eyebrow">SERVER LIFECYCLE</span><h2>安装与更新</h2><p>安装游戏文件，或将服务端升级至最新版本。</p></div>
+        </div>
+        <div class="setup-grid">
+          <article class="action-card card">
+            <div class="action-icon">↓</div>
+            <div><span class="card-label">首次部署</span><h3>安装服务端</h3><p>自动准备目录并下载经过校验的服务端文件。</p></div>
+            <button class="button primary full" data-action="install">开始安装</button>
+          </article>
+          <article class="action-card card">
+            <div class="action-icon update">↻</div>
+            <div><span class="card-label">版本管理</span><h3>更新服务端</h3><p>停止当前进程，校验文件并安装最新版本。</p></div>
+            <button class="button secondary full" data-action="update">检查并更新</button>
+          </article>
+        </div>
+      </section>
+
+      <section class="page-panel" id="panel-config">
+        <div class="section-heading">
+          <div><span class="eyebrow">FRIENDLY CONFIGURATION</span><h2>参数配置</h2><p>修改常用设置。保存后可选择立即重启服务。</p></div>
+          <div class="heading-actions">
+            <button class="button secondary" id="reset-config">恢复界面值</button>
+            <button class="button primary" id="save-config">保存参数</button>
+          </div>
+        </div>
+        <div class="config-tools">
+          <label class="config-search">
+            <span>⌕</span>
+            <input id="config-search" type="search" placeholder="搜索参数名称、键名或说明…" autocomplete="off">
+          </label>
+          <span class="parameter-count" id="parameter-count">0 个参数</span>
+        </div>
+        <div id="config-form" class="config-layout"></div>
+      </section>
+
+      <section class="page-panel" id="panel-raw">
+        <div class="section-heading">
+          <div><span class="eyebrow">RAW CONFIGURATION</span><h2>原始文件</h2><p>高级编辑模式。保存前会自动保留上一份配置。</p></div>
+          <button class="button primary" id="save-raw">保存文件</button>
+        </div>
+        <article class="editor-card card">
+          <div class="editor-toolbar">
+            <div><span class="file-dot"></span><strong id="editor-filename">config</strong><span class="modified-dot" id="modified-dot"></span></div>
+            <span>UTF-8 · LF</span>
+          </div>
+          <div class="editor-wrap">
+            <div class="line-numbers" id="line-numbers">1</div>
+            <textarea id="raw-editor" spellcheck="false" aria-label="原始配置内容"></textarea>
+          </div>
+        </article>
+      </section>
+    </main>
+  </div>
+
+  <div class="task-drawer" id="task-drawer" aria-live="polite">
+    <div class="task-head">
+      <div><span class="task-spinner"></span><div><strong id="task-title">正在执行</strong><p id="task-message">准备任务</p></div></div>
+      <button class="icon-button" id="close-task" aria-label="关闭">×</button>
+    </div>
+    <div class="progress-track"><i id="task-progress"></i></div>
+    <pre id="task-logs"></pre>
+  </div>
+
+  <div class="toast" id="toast"><span>✓</span><p>已保存</p></div>
+  <script>
+    window.DEMO_MODE = {{ 'true' if demo_mode else 'false' }};
+    window.CSRF_TOKEN = {{ csrf_token | tojson }};
+  </script>
+  <script src="{{ url_for('static', filename='app.js') }}"></script>
+</body>
+</html>
