@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css', v='20260729-3') }}">
 </head>
 <body>
   <div class="ambient ambient-one"></div>
@@ -192,6 +192,6 @@
     window.DEMO_MODE = {{ 'true' if demo_mode else 'false' }};
     window.CSRF_TOKEN = {{ csrf_token | tojson }};
   </script>
-  <script src="{{ url_for('static', filename='app.js') }}"></script>
+  <script src="{{ url_for('static', filename='app.js', v='20260729-3') }}"></script>
 </body>
 </html>

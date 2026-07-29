@@ -64,10 +64,14 @@ async function boot() {
 function renderNav() {
   $("#game-nav").innerHTML = state.games.map((game) => `
     <button class="game-button ${state.current?.id === game.id ? "active" : ""}" data-game="${game.id}" title="${escapeHtml(game.name)}" aria-label="${escapeHtml(game.name)}">
+      <span class="game-glyph">${escapeHtml(game.shortName)}</span>
       <img class="game-icon" src="${escapeHtml(game.iconUrl)}" alt="" width="38" height="38">
       <small>${game.state.running ? "LIVE" : "OFF"}</small>
     </button>
   `).join("");
+  $$(".game-icon").forEach((image) => image.addEventListener("error", () => {
+    image.hidden = true;
+  }, { once: true }));
   $$("[data-game]").forEach((button) => button.addEventListener("click", () => selectGame(button.dataset.game)));
 }
 
@@ -101,7 +105,10 @@ function findField(key) {
 
 function renderOverview() {
   const { state: server, version, latestVersion } = state.current;
-  $("#hero-art").style.backgroundImage = `url("${state.current.backgroundUrl}")`;
+  const heroArt = $("#hero-art");
+  if (heroArt && state.current.backgroundUrl) {
+    heroArt.style.backgroundImage = `url("${state.current.backgroundUrl}")`;
+  }
   $("#hero-state").textContent = server.running ? "运行中" : "已停止";
   $("#hero-subtitle").textContent = server.running ? "世界正在等待玩家加入" : "启动服务后即可接受玩家连接";
   $("#pulse-orb").classList.toggle("stopped", !server.running);
@@ -109,7 +116,10 @@ function renderOverview() {
   $("#uptime").textContent = server.uptime;
   $("#port").textContent = findField("PublicPort")?.value ?? findField("server-port")?.value ?? "—";
   $("#current-version").textContent = version;
-  $("#latest-version-label").textContent = state.current.id === "palworld" ? "Steam 最新构建" : "最新版本";
+  const latestVersionLabel = $("#latest-version-label");
+  if (latestVersionLabel) {
+    latestVersionLabel.textContent = state.current.id === "palworld" ? "Steam 最新构建" : "最新版本";
+  }
   $("#latest-version").textContent = latestVersion;
   const latestBuildId = String(latestVersion || "").match(/\d+/)?.[0] || "";
   const buildId = String(server.buildId || "");
