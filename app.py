@@ -62,6 +62,8 @@ class GameDefinition:
     short_name: str
     eyebrow: str
     accent: str
+    icon_url: str
+    background_url: str
     config_name: str
     service_name: str
     version: str
@@ -77,6 +79,8 @@ GAMES: dict[str, GameDefinition] = {
         short_name="PAL",
         eyebrow="PALWORLD DEDICATED SERVER",
         accent="#8b7cff",
+        icon_url="/static/assets/games/palworld-icon.jpg",
+        background_url="/static/assets/games/palworld-bg.jpg",
         config_name="PalWorldSettings.ini",
         service_name="palworld.service",
         version="演示版本 0.6.8",
@@ -96,6 +100,8 @@ GAMES: dict[str, GameDefinition] = {
         short_name="MC",
         eyebrow="MINECRAFT JAVA SERVER",
         accent="#72d572",
+        icon_url="/static/assets/games/minecraft-icon.png",
+        background_url="/static/assets/games/minecraft-bg.jpg",
         config_name="server.properties",
         service_name="minecraft.service",
         version="演示版本 1.21",
@@ -129,6 +135,8 @@ def public_game(game: GameDefinition, include_status: bool = True) -> dict[str, 
         "shortName": game.short_name,
         "eyebrow": game.eyebrow,
         "accent": game.accent,
+        "iconUrl": game.icon_url,
+        "backgroundUrl": game.background_url,
         "installDir": str(runtime.install_dir(game.id)),
         "configName": str(runtime.config_path(game)),
         "serviceName": game.service_name,
