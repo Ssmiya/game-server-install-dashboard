@@ -428,15 +428,38 @@ class GameRuntime:
         except Exception:
             return 0
 
-    def installed_version(self, game_id: str) -> str:
+    def palworld_server_info(
+        self, values: dict[str, Any], query_server: bool = True
+    ) -> dict[str, Any]:
+        cache_path = self.data_root / "palworld-server-info.json"
+        if query_server and values.get("RESTAPIEnabled"):
+            try:
+                port = int(values.get("RESTAPIPort", 8212))
+                password = values.get("AdminPassword", "")
+                token = base64.b64encode(f"admin:{password}".encode()).decode()
+                request = urllib.request.Request(
+                    f"http://127.0.0.1:{port}/v1/api/info",
+                    headers={"Authorization": f"Basic {token}", "User-Agent": "GameDeck/1.0"},
+                )
+                with urllib.request.urlopen(request, timeout=2) as response:
+                    payload = json.load(response)
+                if isinstance(payload, dict) and payload.get("version"):
+                    cache_path.parent.mkdir(parents=True, exist_ok=True)
+                    cache_path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+                    return payload
+            except Exception:
+                pass
+        try:
+            payload = json.loads(cache_path.read_text(encoding="utf-8"))
+            return payload if isinstance(payload, dict) else {}
+        except (OSError, ValueError):
+            return {}
+
+    def installed_build_id(self, game_id: str) -> str:
         if game_id == "minecraft":
-            path = self.install_dir(game_id) / ".version.json"
-            if path.exists():
-                return json.loads(path.read_text(encoding="utf-8")).get("id", "未知")
-            return "未安装"
-        manifest = self.install_dir(game_id).parent / "steamapps/appmanifest_2394010.acf"
+            return ""
         candidates = [
-            manifest,
+            self.install_dir(game_id).parent / "steamapps/appmanifest_2394010.acf",
             self.install_dir(game_id) / "steamapps/appmanifest_2394010.acf",
             self.install_dir(game_id).parent / "appmanifest_2394010.acf",
         ]
@@ -444,7 +467,18 @@ class GameRuntime:
             if path.exists():
                 match = re.search(r'"buildid"\s+"(\d+)"', path.read_text(errors="replace"))
                 if match:
-                    return f"Build {match.group(1)}"
+                    return match.group(1)
+        return ""
+
+    def installed_version(self, game_id: str) -> str:
+        if game_id == "minecraft":
+            path = self.install_dir(game_id) / ".version.json"
+            if path.exists():
+                return json.loads(path.read_text(encoding="utf-8")).get("id", "未知")
+            return "未安装"
+        build_id = self.installed_build_id(game_id)
+        if build_id:
+            return f"Build {build_id}"
         return "已安装" if (self.install_dir(game_id) / "PalServer.sh").exists() else "未安装"
 
     def _refresh_latest_version(self, game_id: str) -> None:
@@ -487,12 +521,19 @@ class GameRuntime:
         running = self.is_running(game.id)
         stats = self.process_stats(game.id) if running else {"cpu": 0, "memory": 0, "uptime": "—"}
         capacity = int(values.get("ServerPlayerMaxNum" if game.id == "palworld" else "max-players", 0))
+        installed_version = self.installed_version(game.id)
+        if game.id == "palworld":
+            installed_version = (
+                self.palworld_server_info(values, query_server=running).get("version")
+                or installed_version
+            )
         return {
-            "installed": self.installed_version(game.id) != "未安装",
+            "installed": installed_version != "未安装",
             "running": running,
             "players": self.player_count(game, values) if running else 0,
             "capacity": capacity,
             **stats,
-            "version": self.installed_version(game.id),
+            "version": installed_version,
+            "buildId": self.installed_build_id(game.id),
             "latestVersion": self.latest_version(game.id),
         }

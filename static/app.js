@@ -108,8 +108,14 @@ function renderOverview() {
   $("#uptime").textContent = server.uptime;
   $("#port").textContent = findField("PublicPort")?.value ?? findField("server-port")?.value ?? "—";
   $("#current-version").textContent = version;
+  $("#latest-version-label").textContent = state.current.id === "palworld" ? "Steam 最新构建" : "最新版本";
   $("#latest-version").textContent = latestVersion;
-  $("#version-chip").textContent = version === latestVersion ? "已是最新" : "可更新";
+  const latestBuildId = String(latestVersion || "").match(/\d+/)?.[0] || "";
+  const buildId = String(server.buildId || "");
+  const isLatest = state.current.id === "palworld"
+    ? Boolean(buildId && latestBuildId && buildId === latestBuildId)
+    : version === latestVersion;
+  $("#version-chip").textContent = isLatest ? "已是最新" : "可更新";
   animateMetric($("#cpu-value"), Number(server.cpu), "%", 0);
   animateMetric($("#cpu-label"), Number(server.cpu), "%", 0);
   $("#cpu-ring").style.setProperty("--value", server.cpu);
