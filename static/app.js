@@ -110,14 +110,33 @@ function renderOverview() {
   $("#current-version").textContent = version;
   $("#latest-version").textContent = latestVersion;
   $("#version-chip").textContent = version === latestVersion ? "已是最新" : "可更新";
-  $("#cpu-value").textContent = `${server.cpu}%`;
-  $("#cpu-label").textContent = `${server.cpu}%`;
+  animateMetric($("#cpu-value"), Number(server.cpu), "%", 0);
+  animateMetric($("#cpu-label"), Number(server.cpu), "%", 0);
   $("#cpu-ring").style.setProperty("--value", server.cpu);
-  $("#memory-label").textContent = `${server.memory} GB`;
+  animateMetric($("#memory-label"), Number(server.memory), " GB", 1);
   $("#memory-meter").style.width = `${Math.min(100, server.memory / 16 * 100)}%`;
   $("#install-dir").textContent = state.current.installDir;
   $("#config-name").textContent = state.current.configName;
   $("#service-name").textContent = state.current.serviceName;
+}
+
+function animateMetric(element, target, suffix = "", decimals = 0) {
+  if (!element || window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+    if (element) element.textContent = `${target.toFixed(decimals)}${suffix}`;
+    return;
+  }
+  const previous = Number(element.dataset.metricValue || 0);
+  const started = performance.now();
+  const duration = 750;
+  element.dataset.metricValue = target;
+  const tick = (now) => {
+    const progress = Math.min(1, (now - started) / duration);
+    const eased = 1 - Math.pow(1 - progress, 3);
+    const value = previous + (target - previous) * eased;
+    element.textContent = `${value.toFixed(decimals)}${suffix}`;
+    if (progress < 1 && Number(element.dataset.metricValue) === target) requestAnimationFrame(tick);
+  };
+  requestAnimationFrame(tick);
 }
 
 function fieldHtml(field) {
@@ -254,6 +273,7 @@ async function startAction(action) {
       body: JSON.stringify(payload),
     });
     $("#task-title").textContent = labels[action];
+    $("#task-drawer").dataset.status = "running";
     $("#task-drawer").classList.add("visible");
     pollJob(job.id);
   } catch (error) {
@@ -264,6 +284,7 @@ async function startAction(action) {
 async function pollJob(id) {
   const job = await api(`/api/jobs/${id}`);
   $("#task-message").textContent = job.message;
+  $("#task-drawer").dataset.status = job.status;
   $("#task-progress").style.width = `${job.progress}%`;
   $("#task-logs").textContent = job.logs.join("\n") || "等待任务输出…";
   $("#task-logs").scrollTop = $("#task-logs").scrollHeight;
