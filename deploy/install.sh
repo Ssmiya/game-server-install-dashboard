@@ -179,7 +179,6 @@ EnvironmentFile=${ENV_FILE}
 ExecStart=${APP_ROOT}/.venv/bin/gunicorn --workers 1 --threads 8 --timeout 1800 --bind 127.0.0.1:${INTERNAL_PORT} app:app
 Restart=on-failure
 RestartSec=5
-NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=read-only
