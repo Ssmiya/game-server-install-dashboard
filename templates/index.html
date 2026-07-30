@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css', v='20260730-1') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css', v='20260730-2') }}">
 </head>
 <body>
   <div class="ambient ambient-one"></div>
@@ -22,7 +22,7 @@
       <div class="rail-divider"></div>
       <nav id="game-nav" class="game-nav"></nav>
       <div class="rail-spacer"></div>
-      <button class="rail-button muted" title="添加游戏" aria-label="添加游戏">＋</button>
+      <button class="rail-button muted" id="market-button" title="游戏市场" aria-label="打开游戏市场">＋</button>
       <button class="rail-button muted" title="设置" aria-label="设置">⚙</button>
     </aside>
 
@@ -178,6 +178,27 @@
     </main>
   </div>
 
+  <div class="market-overlay" id="market-overlay" aria-hidden="true">
+    <section class="market-dialog" role="dialog" aria-modal="true" aria-labelledby="market-title">
+      <div class="market-head">
+        <div>
+          <span class="eyebrow">GAME CATALOG</span>
+          <h2 id="market-title">游戏市场</h2>
+          <p>找到想管理的服务端并添加到控制台。添加游戏不会自动安装。</p>
+        </div>
+        <button class="market-close" id="market-close" aria-label="关闭游戏市场">×</button>
+      </div>
+      <div class="market-toolbar">
+        <label class="market-search">
+          <span>⌕</span>
+          <input id="market-search" type="search" placeholder="搜索游戏、类型或平台…" autocomplete="off">
+        </label>
+        <span id="market-count">0 个游戏</span>
+      </div>
+      <div class="market-grid" id="market-grid"></div>
+    </section>
+  </div>
+
   <div class="task-drawer" id="task-drawer" aria-live="polite">
     <div class="task-head">
       <div><span class="task-spinner"></span><div><strong id="task-title">正在执行</strong><p id="task-message">准备任务</p></div></div>
@@ -192,6 +213,6 @@
     window.DEMO_MODE = {{ 'true' if demo_mode else 'false' }};
     window.CSRF_TOKEN = {{ csrf_token | tojson }};
   </script>
-  <script src="{{ url_for('static', filename='app.js', v='20260730-1') }}"></script>
+  <script src="{{ url_for('static', filename='app.js', v='20260730-2') }}"></script>
 </body>
 </html>

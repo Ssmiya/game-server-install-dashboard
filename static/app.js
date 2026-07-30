@@ -5,6 +5,7 @@ const state = {
   originalValues: {},
   rawModified: false,
   expandedGroups: new Set(),
+  marketGames: [],
 };
 
 const $ = (selector) => document.querySelector(selector);
@@ -56,9 +57,93 @@ async function api(path, options = {}) {
 
 async function boot() {
   state.games = await api("/api/games");
+  if (!state.games.length) throw new Error("控制台中还没有游戏");
   renderNav();
   selectGame(state.games[0].id);
   bindEvents();
+}
+
+async function openMarket() {
+  const overlay = $("#market-overlay");
+  overlay.classList.add("visible");
+  overlay.setAttribute("aria-hidden", "false");
+  document.body.classList.add("market-open");
+  $("#market-search").value = "";
+  $("#market-grid").innerHTML = '<div class="market-loading">正在载入游戏目录…</div>';
+  try {
+    state.marketGames = await api("/api/market");
+    renderMarket();
+    $("#market-search").focus();
+  } catch (error) {
+    $("#market-grid").innerHTML = `<div class="market-empty">市场载入失败：${escapeHtml(error.message)}</div>`;
+  }
+}
+
+function closeMarket() {
+  const overlay = $("#market-overlay");
+  overlay.classList.remove("visible");
+  overlay.setAttribute("aria-hidden", "true");
+  document.body.classList.remove("market-open");
+}
+
+function renderMarket(query = "") {
+  const normalized = query.trim().toLowerCase();
+  const games = state.marketGames.filter((game) =>
+    `${game.name} ${game.shortName} ${game.description} ${(game.tags || []).join(" ")}`
+      .toLowerCase()
+      .includes(normalized)
+  );
+  $("#market-count").textContent = `${games.length} 个游戏`;
+  $("#market-grid").innerHTML = games.length ? games.map((game) => `
+    <article class="market-card" style="--market-accent:${escapeHtml(game.accent)}">
+      <div class="market-cover" style="background-image:url('${escapeHtml(game.backgroundUrl)}')">
+        <div class="market-cover-shade"></div>
+        <img src="${escapeHtml(game.iconUrl)}" alt="" width="48" height="48">
+        <span class="market-state ${game.enabled ? "enabled" : ""}">${game.enabled ? "已添加" : "可添加"}</span>
+      </div>
+      <div class="market-card-body">
+        <div class="market-title-line">
+          <div><span>${escapeHtml(game.shortName)}</span><h3>${escapeHtml(game.name)}</h3></div>
+          ${game.installed ? `<span class="installed-mark">已安装</span>` : ""}
+        </div>
+        <p>${escapeHtml(game.description)}</p>
+        <div class="market-tags">${(game.tags || []).map((tag) => `<span>${escapeHtml(tag)}</span>`).join("")}</div>
+        <button class="button ${game.enabled ? "secondary" : "primary"} full market-toggle"
+          data-market-game="${escapeHtml(game.id)}" data-enabled="${game.enabled}">
+          ${game.enabled ? "从左侧列表移除" : "添加到控制台"}
+        </button>
+      </div>
+    </article>
+  `).join("") : '<div class="market-empty">没有找到匹配的游戏</div>';
+  $$("[data-market-game]").forEach((button) => button.addEventListener("click", () =>
+    toggleMarketGame(button.dataset.marketGame, button.dataset.enabled === "true")
+  ));
+}
+
+async function toggleMarketGame(gameId, enabled) {
+  const button = $(`[data-market-game="${gameId}"]`);
+  if (button) {
+    button.disabled = true;
+    button.textContent = enabled ? "正在移除…" : "正在添加…";
+  }
+  try {
+    await api(`/api/market/${gameId}/enable`, { method: enabled ? "DELETE" : "POST" });
+    state.games = await api("/api/games");
+    state.marketGames = await api("/api/market");
+    if (!enabled) {
+      const added = state.games.find((game) => game.id === gameId);
+      if (added) selectGame(gameId);
+    } else if (state.current.id === gameId) {
+      selectGame(state.games[0].id);
+    } else {
+      renderNav();
+    }
+    renderMarket($("#market-search").value);
+    showToast(enabled ? "已从左侧列表移除，游戏文件不会被删除" : "已添加到控制台");
+  } catch (error) {
+    showToast(error.message, true);
+    renderMarket($("#market-search").value);
+  }
 }
 
 function renderNav() {
@@ -368,6 +453,15 @@ function bindEvents() {
       applyTheme(document.documentElement.dataset.theme === "light" ? "dark" : "light");
     });
   }
+  $("#market-button").addEventListener("click", openMarket);
+  $("#market-close").addEventListener("click", closeMarket);
+  $("#market-overlay").addEventListener("click", (event) => {
+    if (event.target === event.currentTarget) closeMarket();
+  });
+  $("#market-search").addEventListener("input", (event) => renderMarket(event.target.value));
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && $("#market-overlay").classList.contains("visible")) closeMarket();
+  });
   $$(".tab").forEach((button) => button.addEventListener("click", () => switchTab(button.dataset.tab)));
   $$("[data-action]").forEach((button) => button.addEventListener("click", () => startAction(button.dataset.action)));
   $("#start-button").addEventListener("click", () => startAction("start"));

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import secrets
 import threading
@@ -68,6 +69,8 @@ class GameDefinition:
     service_name: str
     version: str
     latest_version: str
+    description: str
+    tags: tuple[str, ...]
     fields: tuple[dict[str, Any], ...]
     default_config: str
 
@@ -85,6 +88,8 @@ GAMES: dict[str, GameDefinition] = {
         service_name="palworld.service",
         version="演示版本 0.6.8",
         latest_version="演示最新版本",
+        description="开放世界生存制作游戏的官方专用服务器，支持完整参数配置与版本更新。",
+        tags=("生存", "开放世界", "SteamCMD"),
         fields=tuple(PALWORLD_FIELDS),
         default_config=(
             "[/Script/Pal.PalGameWorldSettings]\n"
@@ -106,6 +111,8 @@ GAMES: dict[str, GameDefinition] = {
         service_name="minecraft.service",
         version="演示版本 1.21",
         latest_version="演示最新版本",
+        description="经典 Java 版沙盒服务端，支持官方版本更新、EULA 确认与属性配置。",
+        tags=("沙盒", "Java", "跨平台"),
         fields=tuple(MINECRAFT_FIELDS),
         default_config=(
             "motd=A cozy Minecraft server\nserver-port=25565\nmax-players=12\n"
@@ -114,6 +121,28 @@ GAMES: dict[str, GameDefinition] = {
         ),
     ),
 }
+
+enabled_games_lock = threading.Lock()
+enabled_games_path = DATA_DIR / "enabled-games.json"
+
+
+def enabled_game_ids() -> set[str]:
+    try:
+        payload = json.loads(enabled_games_path.read_text(encoding="utf-8"))
+        enabled = payload.get("enabled", [])
+        return {game_id for game_id in enabled if game_id in GAMES}
+    except (OSError, ValueError, TypeError):
+        return set(GAMES)
+
+
+def save_enabled_game_ids(enabled: set[str]) -> None:
+    enabled_games_path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = enabled_games_path.with_suffix(".tmp")
+    temporary.write_text(
+        json.dumps({"enabled": sorted(enabled)}, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    temporary.replace(enabled_games_path)
 
 
 def public_game(game: GameDefinition, include_status: bool = True) -> dict[str, Any]:
@@ -142,6 +171,8 @@ def public_game(game: GameDefinition, include_status: bool = True) -> dict[str, 
         "serviceName": game.service_name,
         "version": status.get("version", game.version),
         "latestVersion": status.get("latestVersion", game.latest_version),
+        "description": game.description,
+        "tags": game.tags,
         "fields": fields,
         "state": status,
     }
@@ -192,7 +223,56 @@ def health():
 
 @app.get("/api/games")
 def game_list():
-    return jsonify([public_game(game) for game in GAMES.values()])
+    enabled = enabled_game_ids()
+    return jsonify([public_game(game) for game_id, game in GAMES.items() if game_id in enabled])
+
+
+@app.get("/api/market")
+def market_list():
+    enabled = enabled_game_ids()
+    result = []
+    for game in GAMES.values():
+        installed_version = runtime.installed_version(game.id)
+        result.append({
+            "id": game.id,
+            "name": game.name,
+            "shortName": game.short_name,
+            "description": game.description,
+            "tags": game.tags,
+            "accent": game.accent,
+            "iconUrl": game.icon_url,
+            "backgroundUrl": game.background_url,
+            "enabled": game.id in enabled,
+            "installed": installed_version != "未安装",
+            "installedVersion": installed_version,
+        })
+    return jsonify(result)
+
+
+@app.post("/api/market/<game_id>/enable")
+def enable_market_game(game_id: str):
+    if game_id not in GAMES:
+        return jsonify({"error": "市场中不存在该游戏"}), 404
+    with enabled_games_lock:
+        enabled = enabled_game_ids()
+        enabled.add(game_id)
+        save_enabled_game_ids(enabled)
+    return jsonify({"ok": True, "gameId": game_id})
+
+
+@app.delete("/api/market/<game_id>/enable")
+def disable_market_game(game_id: str):
+    if game_id not in GAMES:
+        return jsonify({"error": "市场中不存在该游戏"}), 404
+    with enabled_games_lock:
+        enabled = enabled_game_ids()
+        if game_id not in enabled:
+            return jsonify({"ok": True, "gameId": game_id})
+        if len(enabled) <= 1:
+            return jsonify({"error": "控制台至少需要保留一个游戏"}), 409
+        enabled.remove(game_id)
+        save_enabled_game_ids(enabled)
+    return jsonify({"ok": True, "gameId": game_id})
 
 
 @app.get("/api/games/<game_id>/status")
