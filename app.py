@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from flask import Flask, Response, jsonify, render_template, request
+from flask import Flask, jsonify, redirect, render_template, request, session, url_for
 from werkzeug.security import check_password_hash
 
 from game_fields import MINECRAFT_FIELDS, PALWORLD_FIELDS
@@ -22,7 +22,13 @@ DATA_DIR = Path(os.environ.get("GAME_DASHBOARD_DATA", BASE_DIR / "data"))
 EXECUTE_COMMANDS = os.environ.get("GAME_DASHBOARD_EXECUTE", "0") == "1"
 
 app = Flask(__name__)
-app.config["JSON_AS_ASCII"] = False
+app.config.update(
+    JSON_AS_ASCII=False,
+    SECRET_KEY=os.environ.get("DASHBOARD_SESSION_SECRET") or secrets.token_hex(32),
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SECURE=EXECUTE_COMMANDS,
+    SESSION_COOKIE_SAMESITE="Lax",
+)
 runtime = GameRuntime(EXECUTE_COMMANDS, DATA_DIR)
 job_store = JobStore(DATA_DIR / "jobs.sqlite3")
 
@@ -33,27 +39,54 @@ def authentication_enabled() -> bool:
 
 @app.before_request
 def protect_dashboard():
-    if request.path == "/health":
+    if request.path == "/health" or request.path == "/login" or request.path.startswith("/static/"):
         return None
-    if authentication_enabled():
-        auth = request.authorization
-        expected_user = os.environ.get("DASHBOARD_USERNAME", "admin")
-        password_hash = os.environ["DASHBOARD_PASSWORD_HASH"]
-        if (
-            not auth
-            or not secrets.compare_digest(auth.username or "", expected_user)
-            or not check_password_hash(password_hash, auth.password or "")
-        ):
-            return Response(
-                "需要身份验证",
-                401,
-                {"WWW-Authenticate": 'Basic realm="GameDeck", charset="UTF-8"'},
-            )
+    if authentication_enabled() and not session.get("authenticated"):
+        if request.path.startswith("/api/"):
+            return jsonify({"error": "登录已失效，请重新登录"}), 401
+        return redirect(url_for("login"))
     if request.method in {"POST", "PUT", "PATCH", "DELETE"}:
         expected = os.environ.get("DASHBOARD_CSRF_TOKEN")
-        if expected and not secrets.compare_digest(request.headers.get("X-CSRF-Token", ""), expected):
+        supplied = request.headers.get("X-CSRF-Token", "") or request.form.get("csrf_token", "")
+        if expected and not secrets.compare_digest(supplied, expected):
             return jsonify({"error": "请求验证失败，请刷新页面后重试"}), 403
     return None
+
+
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    if not authentication_enabled():
+        return redirect(url_for("index"))
+    error = ""
+    if request.method == "POST":
+        expected_csrf = os.environ.get("DASHBOARD_CSRF_TOKEN", "")
+        supplied_csrf = request.form.get("csrf_token", "")
+        csrf_ok = not expected_csrf or secrets.compare_digest(supplied_csrf, expected_csrf)
+        expected_user = os.environ.get("DASHBOARD_USERNAME", "admin")
+        username = request.form.get("username", "")
+        password = request.form.get("password", "")
+        credentials_ok = (
+            secrets.compare_digest(username, expected_user)
+            and check_password_hash(os.environ["DASHBOARD_PASSWORD_HASH"], password)
+        )
+        if csrf_ok and credentials_ok:
+            session.clear()
+            session["authenticated"] = True
+            session["username"] = expected_user
+            session.permanent = True
+            return redirect(url_for("index"))
+        error = "用户名或密码不正确"
+    return render_template(
+        "login.html",
+        error=error,
+        csrf_token=os.environ.get("DASHBOARD_CSRF_TOKEN", ""),
+    )
+
+
+@app.post("/logout")
+def logout():
+    session.clear()
+    return jsonify({"ok": True})
 
 
 @dataclass(frozen=True)

@@ -23,7 +23,7 @@
       <nav id="game-nav" class="game-nav"></nav>
       <div class="rail-spacer"></div>
       <button class="rail-button muted" id="market-button" title="游戏市场" aria-label="打开游戏市场">＋</button>
-      <button class="rail-button muted" title="设置" aria-label="设置">⚙</button>
+      <button class="rail-button muted" id="logout-button" title="退出登录" aria-label="退出登录">↪</button>
     </aside>
 
     <main class="workspace">
@@ -213,6 +213,6 @@
     window.DEMO_MODE = {{ 'true' if demo_mode else 'false' }};
     window.CSRF_TOKEN = {{ csrf_token | tojson }};
   </script>
-  <script src="{{ url_for('static', filename='app.js', v='20260730-2') }}"></script>
+  <script src="{{ url_for('static', filename='app.js', v='20260730-3') }}"></script>
 </body>
 </html>

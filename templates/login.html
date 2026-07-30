@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0b0c10">
+  <title>登录 — GameDeck</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='login.css', v='20260730-1') }}">
+</head>
+<body>
+  <main class="login-shell">
+    <section class="login-visual" aria-hidden="true">
+      <div class="visual-grid"></div>
+      <div class="visual-copy">
+        <span class="visual-mark"><i></i><i></i><i></i></span>
+        <p>YOUR SERVERS.<br>ONE CONTROL DECK.</p>
+        <div class="visual-status"><span></span> SYSTEM READY</div>
+      </div>
+    </section>
+
+    <section class="login-panel">
+      <div class="login-card">
+        <div class="login-brand">
+          <span class="mini-mark"><i></i><i></i><i></i></span>
+          <span>GAMEDECK</span>
+        </div>
+        <span class="eyebrow">SECURE CONSOLE</span>
+        <h1>欢迎回来</h1>
+        <p class="subtitle">登录后管理游戏服务端、配置和更新。</p>
+
+        {% if error %}
+        <div class="login-error" role="alert"><span>!</span>{{ error }}</div>
+        {% endif %}
+
+        <form method="post" action="{{ url_for('login') }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <label>
+            <span>用户名</span>
+            <input name="username" type="text" value="admin" autocomplete="username" required autofocus>
+          </label>
+          <label>
+            <span>密码</span>
+            <input name="password" type="password" autocomplete="current-password" required>
+          </label>
+          <button type="submit">进入控制台 <span>→</span></button>
+        </form>
+        <p class="login-note"><span></span>会话仅保存在当前浏览器中</p>
+      </div>
+    </section>
+  </main>
+</body>
+</html>

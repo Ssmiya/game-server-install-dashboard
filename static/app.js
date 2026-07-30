@@ -51,6 +51,10 @@ async function api(path, options = {}) {
     ...options,
   });
   const data = await response.json();
+  if (response.status === 401) {
+    window.location.assign("/login");
+    throw new Error("登录已失效");
+  }
   if (!response.ok) throw new Error(data.error || "请求失败");
   return data;
 }
@@ -454,6 +458,13 @@ function bindEvents() {
     });
   }
   $("#market-button").addEventListener("click", openMarket);
+  $("#logout-button").addEventListener("click", async () => {
+    try {
+      await api("/logout", { method: "POST", body: "{}" });
+    } finally {
+      window.location.assign("/login");
+    }
+  });
   $("#market-close").addEventListener("click", closeMarket);
   $("#market-overlay").addEventListener("click", (event) => {
     if (event.target === event.currentTarget) closeMarket();

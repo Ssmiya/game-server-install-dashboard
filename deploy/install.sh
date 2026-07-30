@@ -16,6 +16,7 @@ DASHBOARD_USERNAME="${DASHBOARD_USERNAME:-admin}"
 SOURCE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 EXISTING_PASSWORD_HASH=""
 EXISTING_CSRF_TOKEN=""
+EXISTING_SESSION_SECRET=""
 GENERATED_PASSWORD=""
 
 validate_source_tree() {
@@ -24,8 +25,10 @@ validate_source_tree() {
     "app.py"
     "production_runtime.py"
     "templates/index.html"
+    "templates/login.html"
     "static/app.js"
     "static/styles.css"
+    "static/login.css"
     "static/assets/games/palworld-bg.jpg"
     "static/assets/games/palworld-icon.jpg"
     "static/assets/games/minecraft-bg.jpg"
@@ -48,6 +51,7 @@ fi
 if [[ -f "${ENV_FILE}" ]]; then
   EXISTING_PASSWORD_HASH="$(sed -n 's/^DASHBOARD_PASSWORD_HASH=//p' "${ENV_FILE}" | head -n 1)"
   EXISTING_CSRF_TOKEN="$(sed -n 's/^DASHBOARD_CSRF_TOKEN=//p' "${ENV_FILE}" | head -n 1)"
+  EXISTING_SESSION_SECRET="$(sed -n 's/^DASHBOARD_SESSION_SECRET=//p' "${ENV_FILE}" | head -n 1)"
   EXISTING_USERNAME="$(sed -n 's/^DASHBOARD_USERNAME=//p' "${ENV_FILE}" | head -n 1)"
   [[ -n "${EXISTING_USERNAME}" ]] && DASHBOARD_USERNAME="${EXISTING_USERNAME}"
 fi
@@ -162,7 +166,7 @@ install_steamcmd() {
 }
 
 write_environment() {
-  local password_hash csrf_token
+  local password_hash csrf_token session_secret
   if [[ -n "${EXISTING_PASSWORD_HASH}" && -z "${DASHBOARD_PASSWORD:-}" ]]; then
     password_hash="${EXISTING_PASSWORD_HASH}"
   else
@@ -171,6 +175,7 @@ write_environment() {
       "${DASHBOARD_PASSWORD}")"
   fi
   csrf_token="${EXISTING_CSRF_TOKEN:-$(openssl rand -hex 32)}"
+  session_secret="${EXISTING_SESSION_SECRET:-$(openssl rand -hex 32)}"
   umask 077
   cat > "${ENV_FILE}" <<EOF
 GAME_DASHBOARD_EXECUTE=1
@@ -180,6 +185,7 @@ STEAMCMD_PATH=/opt/steamcmd/steamcmd.sh
 DASHBOARD_USERNAME=${DASHBOARD_USERNAME}
 DASHBOARD_PASSWORD_HASH=${password_hash}
 DASHBOARD_CSRF_TOKEN=${csrf_token}
+DASHBOARD_SESSION_SECRET=${session_secret}
 EOF
   chown root:"${APP_USER}" "${ENV_FILE}"
   chmod 0640 "${ENV_FILE}"
