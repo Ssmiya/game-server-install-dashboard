@@ -38,6 +38,12 @@ sudo \
 - 限定到两个游戏服务的 sudo 权限
 - 独立登录页面、服务器端会话、CSRF 防护与 HTTPS 自签名证书
 
+修改登录密码：
+
+```bash
+sudo bash set-password.sh
+```
+
 正式模式下不会预装任何游戏。进入 Dashboard 后按需点击“开始安装”；首次安装 Minecraft 时在页面确认官方 EULA。
 
 ## 更新已有服务器

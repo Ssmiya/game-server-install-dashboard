@@ -24,6 +24,7 @@ validate_source_tree() {
   local required_files=(
     "app.py"
     "production_runtime.py"
+    "set-password.sh"
     "templates/index.html"
     "templates/login.html"
     "static/app.js"
