@@ -18,6 +18,28 @@ EXISTING_PASSWORD_HASH=""
 EXISTING_CSRF_TOKEN=""
 GENERATED_PASSWORD=""
 
+validate_source_tree() {
+  local required_file
+  local required_files=(
+    "app.py"
+    "production_runtime.py"
+    "templates/index.html"
+    "static/app.js"
+    "static/styles.css"
+    "static/assets/games/palworld-bg.jpg"
+    "static/assets/games/palworld-icon.jpg"
+    "static/assets/games/minecraft-bg.jpg"
+    "static/assets/games/minecraft-icon.png"
+  )
+  for required_file in "${required_files[@]}"; do
+    if [[ ! -s "${SOURCE_DIR}/${required_file}" ]]; then
+      echo "项目文件不完整，缺少：${required_file}" >&2
+      echo "请重新执行 git pull 后再运行 install.sh。" >&2
+      exit 1
+    fi
+  done
+}
+
 if [[ "${EUID}" -ne 0 ]]; then
   echo "请使用 root 运行：sudo bash deploy/install.sh" >&2
   exit 1
@@ -353,6 +375,7 @@ print_summary() {
   echo "自签名证书首次访问会出现浏览器警告，这是预期行为。"
 }
 
+validate_source_tree
 install_packages
 read_credentials
 create_user_and_directories

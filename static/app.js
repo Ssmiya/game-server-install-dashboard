@@ -81,6 +81,10 @@ function selectGame(id) {
   state.originalValues = Object.fromEntries(state.current.fields.map((field) => [field.key, field.value]));
   document.documentElement.style.setProperty("--accent", state.current.accent);
   document.documentElement.style.setProperty("--accent-rgb", accentRgb(state.current.accent));
+  const appShell = $("#app");
+  if (appShell && state.current.backgroundUrl) {
+    appShell.style.setProperty("--game-background", `url("${state.current.backgroundUrl}")`);
+  }
   renderNav();
   renderHeader();
   renderOverview();
