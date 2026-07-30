@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 1,
+  "id": "valheim",
+  "name": "Valheim",
+  "shortName": "VH",
+  "description": "维京题材开放世界生存游戏官方 Linux 专用服务器。",
+  "accent": "#d69a55",
+  "tags": ["生存", "开放世界", "SteamCMD"],
+  "assets": {
+    "icon": "icon.jpg",
+    "background": "background.png"
+  },
+  "adapter": {
+    "type": "steamcmd",
+    "appId": 896660,
+    "executable": "valheim_server.x86_64",
+    "libraryPath": "linux64",
+    "configName": "gamedeck.properties",
+    "launchArgs": ["-name", "{{server-name}}", "-port", "{{server-port}}", "-world", "{{world-name}}", "-password", "{{server-password}}", "-public", "{{public}}", "-saveinterval", "{{save-interval}}", "-nographics", "-batchmode"],
+    "portField": "server-port",
+    "capacityField": ""
+  },
+  "fields": [
+    {"key": "server-name", "label": "服务器名称", "type": "text", "value": "GameDeck Valheim", "group": "基础设置", "description": "显示在服务器列表中的名称。"},
+    {"key": "world-name", "label": "世界名称", "type": "text", "value": "Dedicated", "group": "基础设置", "description": "不存在时会创建同名世界。"},
+    {"key": "server-password", "label": "服务器密码", "type": "password", "value": "", "group": "安全", "description": "Valheim 要求服务器密码至少 5 个字符。"},
+    {"key": "server-port", "label": "起始端口", "type": "number", "value": 2456, "min": 1024, "max": 65534, "step": 1, "group": "网络", "description": "需要同时开放该 UDP 端口及端口 +1。"},
+    {"key": "public", "label": "公开服务器", "type": "select", "value": "1", "options": ["1", "0"], "group": "网络", "description": "1 表示显示在服务器浏览器，0 表示仅通过 IP 加入。"},
+    {"key": "save-interval", "label": "自动保存间隔", "type": "number", "value": 1800, "min": 60, "max": 7200, "step": 60, "group": "存档", "description": "世界自动保存间隔，单位为秒。"}
+  ],
+  "defaultConfig": "server-name=GameDeck Valheim\nworld-name=Dedicated\nserver-password=\nserver-port=2456\npublic=1\nsave-interval=1800\n"
+}

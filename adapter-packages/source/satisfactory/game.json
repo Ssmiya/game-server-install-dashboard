@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "id": "satisfactory",
+  "name": "Satisfactory",
+  "shortName": "SF",
+  "description": "第一人称工厂建造游戏官方 Linux 专用服务器。",
+  "accent": "#f28a32",
+  "tags": ["建造", "自动化", "SteamCMD"],
+  "assets": {
+    "icon": "icon.jpg",
+    "background": "background.png"
+  },
+  "adapter": {
+    "type": "steamcmd",
+    "appId": 1690800,
+    "executable": "FactoryServer.sh",
+    "configName": "gamedeck.properties",
+    "launchArgs": ["-Port={{server-port}}", "-ReliablePort={{reliable-port}}", "-unattended", "-log"],
+    "portField": "server-port",
+    "capacityField": ""
+  },
+  "fields": [
+    {"key": "server-port", "label": "游戏/API 端口", "type": "number", "value": 7777, "min": 1024, "max": 65535, "step": 1, "group": "网络", "description": "默认 7777，需要开放 TCP 和 UDP。"},
+    {"key": "reliable-port", "label": "可靠消息端口", "type": "number", "value": 8888, "min": 1024, "max": 65535, "step": 1, "group": "网络", "description": "默认 8888，需要开放 TCP。"}
+  ],
+  "defaultConfig": "server-port=7777\nreliable-port=8888\n"
+}

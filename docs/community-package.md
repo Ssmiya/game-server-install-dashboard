@@ -31,6 +31,7 @@ my-game.zip
     "type": "steamcmd",
     "appId": 123456,
     "executable": "server.x86_64",
+    "libraryPath": "linux64",
     "configName": "server.properties",
     "launchArgs": ["--port", "{{server-port}}"],
     "portField": "server-port",

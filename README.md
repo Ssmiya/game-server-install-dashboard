@@ -47,6 +47,9 @@ sudo bash set-password.sh
 社区游戏市场支持上传经过校验的声明式 SteamCMD 适配包，格式见
 [`docs/community-package.md`](docs/community-package.md)。
 
+仓库内置可直接上传的 Valheim、Satisfactory 和 Team Fortress 2 示例包，
+位于 [`adapter-packages`](adapter-packages/)。
+
 正式模式下不会预装任何游戏。进入 Dashboard 后按需点击“开始安装”；首次安装 Minecraft 时在页面确认官方 EULA。
 
 ## 更新已有服务器

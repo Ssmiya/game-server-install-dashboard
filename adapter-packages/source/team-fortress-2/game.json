@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 1,
+  "id": "team-fortress-2",
+  "name": "Team Fortress 2",
+  "shortName": "TF2",
+  "description": "Valve 经典团队射击游戏官方 Linux 专用服务器。",
+  "accent": "#d87952",
+  "tags": ["射击", "Source", "SteamCMD"],
+  "assets": {
+    "icon": "icon.jpg",
+    "background": "background.jpg"
+  },
+  "adapter": {
+    "type": "steamcmd",
+    "appId": 232250,
+    "executable": "srcds_run",
+    "configName": "gamedeck.properties",
+    "launchArgs": ["-console", "-game", "tf", "-port", "{{server-port}}", "+hostname", "{{server-name}}", "+map", "{{start-map}}", "+maxplayers", "{{max-players}}", "+sv_lan", "{{lan-only}}"],
+    "portField": "server-port",
+    "capacityField": "max-players"
+  },
+  "fields": [
+    {"key": "server-name", "label": "服务器名称", "type": "text", "value": "GameDeck TF2", "group": "基础设置", "description": "显示在服务器浏览器中的名称。"},
+    {"key": "start-map", "label": "启动地图", "type": "text", "value": "ctf_2fort", "group": "基础设置", "description": "服务启动时载入的地图。"},
+    {"key": "max-players", "label": "最大玩家数", "type": "number", "value": 24, "min": 2, "max": 32, "step": 1, "group": "基础设置"},
+    {"key": "server-port", "label": "游戏端口", "type": "number", "value": 27015, "min": 1024, "max": 65535, "step": 1, "group": "网络", "description": "默认游戏流量端口。"},
+    {"key": "lan-only", "label": "仅局域网", "type": "select", "value": "0", "options": ["0", "1"], "group": "网络", "description": "公网服务器设置为 0。公网列表可能还需要 Steam Game Server Token。"}
+  ],
+  "defaultConfig": "server-name=GameDeck TF2\nstart-map=ctf_2fort\nmax-players=24\nserver-port=27015\nlan-only=0\n"
+}

@@ -114,6 +114,9 @@ class CommunityPackageStore:
             raise PackageValidationError("adapter.appId 必须是有效的 Steam App ID")
         executable = cls._safe_relative(str(adapter.get("executable", "")), "adapter.executable")
         config_name = cls._safe_relative(str(adapter.get("configName", "")), "adapter.configName")
+        library_path = str(adapter.get("libraryPath", "")).strip()
+        if library_path:
+            library_path = cls._safe_relative(library_path, "adapter.libraryPath")
         if not config_name.endswith((".cfg", ".conf", ".ini", ".properties", ".txt")):
             raise PackageValidationError("配置文件扩展名不受支持")
         launch_args = adapter.get("launchArgs", [])
@@ -182,6 +185,7 @@ class CommunityPackageStore:
                 "executable": executable,
                 "configName": config_name,
                 "launchArgs": launch_args,
+                "libraryPath": library_path,
                 "portField": port_field,
                 "capacityField": capacity_field,
             },

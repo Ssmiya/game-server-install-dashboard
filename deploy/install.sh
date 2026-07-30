@@ -342,6 +342,15 @@ server_root = (game_root / game_id / "server").resolve()
 executable = (server_root / adapter["executable"]).resolve()
 if server_root not in executable.parents or not executable.is_file():
     raise SystemExit("declared server executable does not exist")
+library_path = adapter.get("libraryPath", "")
+if library_path:
+    resolved_library = (server_root / library_path).resolve()
+    if server_root not in resolved_library.parents or not resolved_library.is_dir():
+        raise SystemExit("declared library path does not exist")
+    existing_library_path = os.environ.get("LD_LIBRARY_PATH", "")
+    os.environ["LD_LIBRARY_PATH"] = (
+        f"{resolved_library}:{existing_library_path}" if existing_library_path else str(resolved_library)
+    )
 
 values = {}
 config_path = (server_root / adapter["configName"]).resolve()
