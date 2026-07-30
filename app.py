@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import secrets
+import tempfile
 import threading
 import time
 import uuid
@@ -10,10 +11,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from flask import Flask, jsonify, redirect, render_template, request, session, url_for
+from flask import Flask, jsonify, redirect, render_template, request, send_from_directory, session, url_for
 from werkzeug.security import check_password_hash
 
 from game_fields import MINECRAFT_FIELDS, PALWORLD_FIELDS
+from community_packages import CommunityPackageStore, PackageValidationError
 from production_runtime import GameRuntime, JobStore
 
 
@@ -28,7 +30,13 @@ app.config.update(
     SESSION_COOKIE_HTTPONLY=True,
     SESSION_COOKIE_SECURE=EXECUTE_COMMANDS,
     SESSION_COOKIE_SAMESITE="Lax",
+    MAX_CONTENT_LENGTH=11 * 1024 * 1024,
 )
+
+
+@app.errorhandler(413)
+def upload_too_large(_error):
+    return jsonify({"error": "适配包不能超过 10MB"}), 413
 runtime = GameRuntime(EXECUTE_COMMANDS, DATA_DIR)
 job_store = JobStore(DATA_DIR / "jobs.sqlite3")
 
@@ -104,6 +112,7 @@ class GameDefinition:
     latest_version: str
     description: str
     tags: tuple[str, ...]
+    adapter: dict[str, Any] | None
     fields: tuple[dict[str, Any], ...]
     default_config: str
 
@@ -123,6 +132,7 @@ GAMES: dict[str, GameDefinition] = {
         latest_version="演示最新版本",
         description="开放世界生存制作游戏的官方专用服务器，支持完整参数配置与版本更新。",
         tags=("生存", "开放世界", "SteamCMD"),
+        adapter=None,
         fields=tuple(PALWORLD_FIELDS),
         default_config=(
             "[/Script/Pal.PalGameWorldSettings]\n"
@@ -146,6 +156,7 @@ GAMES: dict[str, GameDefinition] = {
         latest_version="演示最新版本",
         description="经典 Java 版沙盒服务端，支持官方版本更新、EULA 确认与属性配置。",
         tags=("沙盒", "Java", "跨平台"),
+        adapter=None,
         fields=tuple(MINECRAFT_FIELDS),
         default_config=(
             "motd=A cozy Minecraft server\nserver-port=25565\nmax-players=12\n"
@@ -154,6 +165,45 @@ GAMES: dict[str, GameDefinition] = {
         ),
     ),
 }
+
+BUILTIN_GAME_IDS = frozenset(GAMES)
+community_store = CommunityPackageStore(DATA_DIR / "community-games")
+
+
+def community_game_definition(package: dict[str, Any]) -> GameDefinition:
+    game_id = package["id"]
+    adapter = package["adapter"]
+    asset_base = f"/community-assets/{game_id}"
+    return GameDefinition(
+        id=game_id,
+        name=package["name"],
+        short_name=package["shortName"],
+        eyebrow="COMMUNITY STEAMCMD ADAPTER",
+        accent=package["accent"],
+        icon_url=f"{asset_base}/{package['assets']['icon']}",
+        background_url=f"{asset_base}/{package['assets']['background']}",
+        config_name=adapter["configName"],
+        service_name=f"gamedash-community@{game_id}.service",
+        version="未安装",
+        latest_version="检查中",
+        description=package["description"],
+        tags=tuple(package["tags"]),
+        adapter=adapter,
+        fields=tuple(package["fields"]),
+        default_config=package["defaultConfig"],
+    )
+
+
+def refresh_community_games() -> None:
+    for game_id in tuple(GAMES):
+        if game_id not in BUILTIN_GAME_IDS:
+            GAMES.pop(game_id, None)
+    for package in community_store.list_packages():
+        if package["status"] == "approved" and package["id"] not in BUILTIN_GAME_IDS:
+            GAMES[package["id"]] = community_game_definition(package)
+
+
+refresh_community_games()
 
 enabled_games_lock = threading.Lock()
 enabled_games_path = DATA_DIR / "enabled-games.json"
@@ -165,7 +215,7 @@ def enabled_game_ids() -> set[str]:
         enabled = payload.get("enabled", [])
         return {game_id for game_id in enabled if game_id in GAMES}
     except (OSError, ValueError, TypeError):
-        return set(GAMES)
+        return set(BUILTIN_GAME_IDS)
 
 
 def save_enabled_game_ids(enabled: set[str]) -> None:
@@ -206,6 +256,8 @@ def public_game(game: GameDefinition, include_status: bool = True) -> dict[str, 
         "latestVersion": status.get("latestVersion", game.latest_version),
         "description": game.description,
         "tags": game.tags,
+        "portField": (game.adapter or {}).get("portField", ""),
+        "adapterType": (game.adapter or {}).get("type", ""),
         "fields": fields,
         "state": status,
     }
@@ -265,7 +317,7 @@ def market_list():
     enabled = enabled_game_ids()
     result = []
     for game in GAMES.values():
-        installed_version = runtime.installed_version(game.id)
+        installed_version = runtime.installed_version_for(game)
         result.append({
             "id": game.id,
             "name": game.name,
@@ -280,6 +332,106 @@ def market_list():
             "installedVersion": installed_version,
         })
     return jsonify(result)
+
+
+@app.get("/community-assets/<game_id>/<filename>")
+def community_asset(game_id: str, filename: str):
+    package_dir = community_store.root / game_id
+    if (
+        game_id in BUILTIN_GAME_IDS
+        or not package_dir.is_dir()
+        or "/" in filename
+        or "\\" in filename
+    ):
+        return jsonify({"error": "资源不存在"}), 404
+    try:
+        manifest = json.loads((package_dir / "game.json").read_text(encoding="utf-8"))
+        allowed_assets = {manifest["assets"]["icon"], manifest["assets"]["background"]}
+    except (OSError, ValueError, KeyError, TypeError):
+        return jsonify({"error": "资源不存在"}), 404
+    if filename not in allowed_assets:
+        return jsonify({"error": "资源不存在"}), 404
+    return send_from_directory(package_dir, filename, max_age=3600)
+
+
+@app.get("/api/market/submissions")
+def market_submissions():
+    return jsonify([
+        {
+            "id": package["id"],
+            "name": package["name"],
+            "shortName": package["shortName"],
+            "description": package["description"],
+            "tags": package["tags"],
+            "accent": package["accent"],
+            "status": package["status"],
+            "appId": package["adapter"]["appId"],
+            "iconUrl": f"/community-assets/{package['id']}/{package['assets']['icon']}",
+            "backgroundUrl": f"/community-assets/{package['id']}/{package['assets']['background']}",
+        }
+        for package in community_store.list_packages()
+    ])
+
+
+@app.post("/api/market/submissions")
+def upload_market_submission():
+    uploaded = request.files.get("package")
+    if not uploaded or not uploaded.filename:
+        return jsonify({"error": "请选择 ZIP 适配包"}), 400
+    if not uploaded.filename.lower().endswith(".zip"):
+        return jsonify({"error": "只允许上传 ZIP 适配包"}), 400
+    upload_dir = DATA_DIR / "uploads"
+    upload_dir.mkdir(parents=True, exist_ok=True)
+    temporary_path: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(dir=upload_dir, suffix=".zip", delete=False) as temporary:
+            temporary_path = Path(temporary.name)
+            uploaded.save(temporary)
+        package = community_store.import_zip(temporary_path)
+        if package["id"] in BUILTIN_GAME_IDS:
+            community_store.delete(package["id"])
+            return jsonify({"error": "不能覆盖内置游戏"}), 409
+        return jsonify({"ok": True, "gameId": package["id"], "status": "pending"}), 201
+    except PackageValidationError as exc:
+        return jsonify({"error": str(exc)}), 400
+    finally:
+        if temporary_path:
+            temporary_path.unlink(missing_ok=True)
+
+
+@app.post("/api/market/submissions/<game_id>/approve")
+def approve_market_submission(game_id: str):
+    if game_id in BUILTIN_GAME_IDS:
+        return jsonify({"error": "不能修改内置游戏"}), 409
+    try:
+        community_store.set_status(game_id, "approved")
+    except FileNotFoundError:
+        return jsonify({"error": "适配包不存在"}), 404
+    except PackageValidationError as exc:
+        return jsonify({"error": str(exc)}), 400
+    refresh_community_games()
+    return jsonify({"ok": True, "gameId": game_id, "status": "approved"})
+
+
+@app.delete("/api/market/submissions/<game_id>")
+def delete_market_submission(game_id: str):
+    if game_id in BUILTIN_GAME_IDS:
+        return jsonify({"error": "不能删除内置游戏"}), 409
+    game = GAMES.get(game_id)
+    if game and EXECUTE_COMMANDS and runtime.is_running(game):
+        return jsonify({"error": "请先停止该游戏服务，再删除适配包"}), 409
+    with enabled_games_lock:
+        enabled = enabled_game_ids()
+        enabled.discard(game_id)
+        save_enabled_game_ids(enabled)
+    GAMES.pop(game_id, None)
+    try:
+        community_store.delete(game_id)
+    except FileNotFoundError:
+        return jsonify({"error": "适配包不存在"}), 404
+    except PackageValidationError as exc:
+        return jsonify({"error": str(exc)}), 400
+    return jsonify({"ok": True, "gameId": game_id})
 
 
 @app.post("/api/market/<game_id>/enable")

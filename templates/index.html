@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css', v='20260730-2') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css', v='20260730-4') }}">
 </head>
 <body>
   <div class="ambient ambient-one"></div>
@@ -193,8 +193,19 @@
           <span>⌕</span>
           <input id="market-search" type="search" placeholder="搜索游戏、类型或平台…" autocomplete="off">
         </label>
-        <span id="market-count">0 个游戏</span>
+        <div class="market-toolbar-actions">
+          <span id="market-count">0 个游戏</span>
+          <button class="button primary" id="package-upload-button">上传适配包</button>
+          <input id="package-upload-input" type="file" accept=".zip,application/zip" hidden>
+        </div>
       </div>
+      <section class="submission-section" id="submission-section" hidden>
+        <div class="submission-head">
+          <div><span class="eyebrow">REVIEW QUEUE</span><h3>待发布适配包</h3></div>
+          <span>校验通过后仍需手动发布</span>
+        </div>
+        <div class="submission-list" id="submission-list"></div>
+      </section>
       <div class="market-grid" id="market-grid"></div>
     </section>
   </div>
@@ -213,6 +224,6 @@
     window.DEMO_MODE = {{ 'true' if demo_mode else 'false' }};
     window.CSRF_TOKEN = {{ csrf_token | tojson }};
   </script>
-  <script src="{{ url_for('static', filename='app.js', v='20260730-3') }}"></script>
+  <script src="{{ url_for('static', filename='app.js', v='20260730-4') }}"></script>
 </body>
 </html>

@@ -6,6 +6,7 @@ const state = {
   rawModified: false,
   expandedGroups: new Set(),
   marketGames: [],
+  submissions: [],
 };
 
 const $ = (selector) => document.querySelector(selector);
@@ -42,15 +43,16 @@ function accentRgb(hex) {
 
 async function api(path, options = {}) {
   const method = (options.method || "GET").toUpperCase();
+  const isFormData = options.body instanceof FormData;
   const response = await fetch(path, {
     headers: {
-      "Content-Type": "application/json",
+      ...(!isFormData ? { "Content-Type": "application/json" } : {}),
       ...(method !== "GET" && window.CSRF_TOKEN ? { "X-CSRF-Token": window.CSRF_TOKEN } : {}),
       ...(options.headers || {}),
     },
     ...options,
   });
-  const data = await response.json();
+  const data = await response.json().catch(() => ({ error: `服务器返回 ${response.status}` }));
   if (response.status === 401) {
     window.location.assign("/login");
     throw new Error("登录已失效");
@@ -75,11 +77,93 @@ async function openMarket() {
   $("#market-search").value = "";
   $("#market-grid").innerHTML = '<div class="market-loading">正在载入游戏目录…</div>';
   try {
-    state.marketGames = await api("/api/market");
+    [state.marketGames, state.submissions] = await Promise.all([
+      api("/api/market"),
+      api("/api/market/submissions"),
+    ]);
     renderMarket();
+    renderSubmissions();
     $("#market-search").focus();
   } catch (error) {
     $("#market-grid").innerHTML = `<div class="market-empty">市场载入失败：${escapeHtml(error.message)}</div>`;
+  }
+}
+
+function renderSubmissions() {
+  const section = $("#submission-section");
+  section.hidden = state.submissions.length === 0;
+  $("#submission-list").innerHTML = state.submissions.map((item) => `
+    <article class="submission-item">
+      <img src="${escapeHtml(item.iconUrl)}" alt="" width="42" height="42">
+      <div class="submission-copy">
+        <div><strong>${escapeHtml(item.name)}</strong><span>Steam ${escapeHtml(item.appId)}</span></div>
+        <p>${escapeHtml(item.description)}</p>
+      </div>
+      <span class="submission-status ${item.status}">${item.status === "approved" ? "已发布" : "待发布"}</span>
+      <div class="submission-actions">
+        ${item.status === "pending" ? `<button class="button primary" data-approve-package="${escapeHtml(item.id)}">发布</button>` : ""}
+        <button class="button secondary" data-delete-package="${escapeHtml(item.id)}">删除</button>
+      </div>
+    </article>
+  `).join("");
+  $$("[data-approve-package]").forEach((button) => button.addEventListener("click", () =>
+    approvePackage(button.dataset.approvePackage)
+  ));
+  $$("[data-delete-package]").forEach((button) => button.addEventListener("click", () =>
+    deletePackage(button.dataset.deletePackage)
+  ));
+}
+
+async function refreshMarketData() {
+  [state.marketGames, state.submissions, state.games] = await Promise.all([
+    api("/api/market"),
+    api("/api/market/submissions"),
+    api("/api/games"),
+  ]);
+  renderMarket($("#market-search").value);
+  renderSubmissions();
+  renderNav();
+}
+
+async function uploadPackage(file) {
+  if (!file) return;
+  const button = $("#package-upload-button");
+  button.disabled = true;
+  button.textContent = "正在校验…";
+  try {
+    const form = new FormData();
+    form.append("package", file, file.name);
+    await api("/api/market/submissions", { method: "POST", body: form });
+    await refreshMarketData();
+    showToast("适配包校验通过，已进入待发布队列");
+  } catch (error) {
+    showToast(error.message, true);
+  } finally {
+    button.disabled = false;
+    button.textContent = "上传适配包";
+    $("#package-upload-input").value = "";
+  }
+}
+
+async function approvePackage(gameId) {
+  try {
+    await api(`/api/market/submissions/${gameId}/approve`, { method: "POST", body: "{}" });
+    await refreshMarketData();
+    showToast("适配包已发布到游戏市场");
+  } catch (error) {
+    showToast(error.message, true);
+  }
+}
+
+async function deletePackage(gameId) {
+  if (!window.confirm("删除适配包只会移除市场定义，不会删除已经下载的游戏服务端和存档。是否继续？")) return;
+  try {
+    await api(`/api/market/submissions/${gameId}`, { method: "DELETE", body: "{}" });
+    await refreshMarketData();
+    if (!state.games.some((game) => game.id === state.current.id)) selectGame(state.games[0].id);
+    showToast("适配包已删除");
+  } catch (error) {
+    showToast(error.message, true);
   }
 }
 
@@ -207,19 +291,28 @@ function renderOverview() {
   $("#pulse-orb").classList.toggle("stopped", !server.running);
   $("#players").textContent = `${server.players} / ${server.capacity}`;
   $("#uptime").textContent = server.uptime;
-  $("#port").textContent = findField("PublicPort")?.value ?? findField("server-port")?.value ?? "—";
+  $("#port").textContent = findField("PublicPort")?.value
+    ?? findField("server-port")?.value
+    ?? findField(state.current.portField)?.value
+    ?? "—";
   $("#current-version").textContent = version;
   const latestVersionLabel = $("#latest-version-label");
   if (latestVersionLabel) {
-    latestVersionLabel.textContent = state.current.id === "palworld" ? "Steam 最新构建" : "最新版本";
+    latestVersionLabel.textContent = state.current.id === "palworld"
+      ? "Steam 最新构建"
+      : state.current.adapterType === "steamcmd" ? "安装来源" : "最新版本";
   }
   $("#latest-version").textContent = latestVersion;
   const latestBuildId = String(latestVersion || "").match(/\d+/)?.[0] || "";
   const buildId = String(server.buildId || "");
-  const isLatest = state.current.id === "palworld"
+  const isLatest = state.current.adapterType === "steamcmd"
+    ? Boolean(server.installed)
+    : state.current.id === "palworld"
     ? Boolean(buildId && latestBuildId && buildId === latestBuildId)
     : version === latestVersion;
-  $("#version-chip").textContent = isLatest ? "已是最新" : "可更新";
+  $("#version-chip").textContent = state.current.adapterType === "steamcmd"
+    ? (server.installed ? "已安装" : "未安装")
+    : (isLatest ? "已是最新" : "可更新");
   animateMetric($("#cpu-value"), Number(server.cpu), "%", 0);
   animateMetric($("#cpu-label"), Number(server.cpu), "%", 0);
   $("#cpu-ring").style.setProperty("--value", server.cpu);
@@ -470,6 +563,8 @@ function bindEvents() {
     if (event.target === event.currentTarget) closeMarket();
   });
   $("#market-search").addEventListener("input", (event) => renderMarket(event.target.value));
+  $("#package-upload-button").addEventListener("click", () => $("#package-upload-input").click());
+  $("#package-upload-input").addEventListener("change", (event) => uploadPackage(event.target.files[0]));
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape" && $("#market-overlay").classList.contains("visible")) closeMarket();
   });

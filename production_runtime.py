@@ -110,7 +110,9 @@ class GameRuntime:
             return self.data_root / game.id / game.config_name
         if game.id == "palworld":
             return self.install_dir(game.id) / "Pal/Saved/Config/LinuxServer/PalWorldSettings.ini"
-        return self.install_dir(game.id) / "server.properties"
+        if game.id == "minecraft":
+            return self.install_dir(game.id) / "server.properties"
+        return self.install_dir(game.id) / game.config_name
 
     def ensure_config(self, game: Any) -> Path:
         path = self.config_path(game)
@@ -181,7 +183,7 @@ class GameRuntime:
                     key, value = line.split("=", 1)
                     raw_values[key.strip()] = value.strip()
             runtime_path = self.game_root / "minecraft/config/runtime.env"
-            if self.execute and runtime_path.exists():
+            if game.id == "minecraft" and self.execute and runtime_path.exists():
                 runtime = {
                     key: value for key, value in (
                         line.split("=", 1) for line in runtime_path.read_text().splitlines()
@@ -225,7 +227,7 @@ class GameRuntime:
             path.write_text(f"[/Script/Pal.PalGameWorldSettings]\nOptionSettings=({rendered})\n", encoding="utf-8")
             return
 
-        runtime_keys = {"memory", "initial-memory", "nogui"}
+        runtime_keys = {"memory", "initial-memory", "nogui"} if game.id == "minecraft" else set()
         properties = {key: value for key, value in current.items() if key not in runtime_keys}
         existing_lines, written = [], set()
         for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
@@ -240,7 +242,7 @@ class GameRuntime:
             if key not in written:
                 existing_lines.append(f"{key}={str(value).lower() if isinstance(value, bool) else value}")
         path.write_text("\n".join(existing_lines) + "\n", encoding="utf-8")
-        if self.execute:
+        if self.execute and game.id == "minecraft":
             runtime_path = self.game_root / "minecraft/config/runtime.env"
             runtime_path.parent.mkdir(parents=True, exist_ok=True)
             runtime_path.write_text(
@@ -347,43 +349,75 @@ class GameRuntime:
         self.ensure_config(game)
         log(f"Minecraft {version_id} 安装完成，SHA-1 校验通过")
 
+    def install_steamcmd_game(self, game: Any, log: LogWriter) -> None:
+        adapter = getattr(game, "adapter", None) or {}
+        app_id = str(adapter.get("appId", ""))
+        if not app_id.isdigit():
+            raise RuntimeError("社区适配包缺少有效的 Steam App ID")
+        directory = self.install_dir(game.id)
+        directory.mkdir(parents=True, exist_ok=True)
+        command = [
+            str(self.steamcmd),
+            "+@sSteamCmdForcePlatformType", "linux",
+            "+force_install_dir", str(directory),
+            "+login", "anonymous",
+            "+app_update", app_id, "validate",
+            "+quit",
+        ]
+        with self.steamcmd_lock:
+            self.run_command(command, log, cwd=self.steamcmd.parent)
+        executable = (directory / adapter["executable"]).resolve()
+        if directory.resolve() not in executable.parents or not executable.is_file():
+            raise RuntimeError(f"SteamCMD 安装完成，但未找到声明的启动文件：{adapter['executable']}")
+        executable.chmod(executable.stat().st_mode | 0o100)
+        self.ensure_config(game)
+        log(f"{game.name} SteamCMD 服务端安装完成")
+
     def perform_action(self, game: Any, action: str, log: LogWriter, accept_eula: bool = False) -> None:
-        lock = self.action_locks[game.id]
+        lock = self.action_locks.setdefault(game.id, threading.Lock())
         if not lock.acquire(blocking=False):
             raise RuntimeError("该游戏已有任务正在执行")
         try:
             if action in {"install", "update"}:
-                if self.is_running(game.id):
-                    self.systemctl(game.id, "stop", log)
+                if self.is_running(game):
+                    self.systemctl(game, "stop", log)
                 if game.id == "palworld":
                     self.install_palworld(game, log)
-                else:
+                elif game.id == "minecraft":
                     self.install_minecraft(game, log, accept_eula)
+                elif (getattr(game, "adapter", None) or {}).get("type") == "steamcmd":
+                    self.install_steamcmd_game(game, log)
+                else:
+                    raise RuntimeError("该游戏没有受支持的安装适配器")
             else:
-                self.systemctl(game.id, action, log)
+                self.systemctl(game, action, log)
         finally:
             lock.release()
 
     @staticmethod
-    def systemctl(game_id: str, action: str, log: LogWriter) -> None:
-        command = ["sudo", "-n", "/usr/bin/systemctl", action, f"{game_id}.service"]
+    def systemctl(game: Any, action: str, log: LogWriter) -> None:
+        helper = Path("/usr/local/sbin/gamedash-service-control")
+        if helper.exists():
+            command = ["sudo", "-n", str(helper), action, game.id]
+        else:
+            command = ["sudo", "-n", "/usr/bin/systemctl", action, game.service_name]
         result = subprocess.run(command, capture_output=True, text=True, timeout=120)
         if result.returncode != 0:
             detail = (result.stderr or result.stdout).strip()
-            raise RuntimeError(detail or f"{game_id}.service 执行 {action} 失败")
-        log(f"{game_id}.service：{action} 完成")
+            raise RuntimeError(detail or f"{game.service_name} 执行 {action} 失败")
+        log(f"{game.service_name}：{action} 完成")
 
     @staticmethod
-    def is_running(game_id: str) -> bool:
+    def is_running(game: Any) -> bool:
         result = subprocess.run(
-            ["/usr/bin/systemctl", "is-active", f"{game_id}.service"],
+            ["/usr/bin/systemctl", "is-active", game.service_name],
             capture_output=True, text=True, timeout=5,
         )
         return result.returncode == 0 and result.stdout.strip() == "active"
 
-    def process_stats(self, game_id: str) -> dict[str, Any]:
+    def process_stats(self, game: Any) -> dict[str, Any]:
         result = subprocess.run(
-            ["/usr/bin/systemctl", "show", f"{game_id}.service", "--property=MainPID", "--value"],
+            ["/usr/bin/systemctl", "show", game.service_name, "--property=MainPID", "--value"],
             capture_output=True, text=True, timeout=5,
         )
         try:
@@ -412,6 +446,8 @@ class GameRuntime:
                 host = os.environ.get("MINECRAFT_QUERY_HOST", "127.0.0.1")
                 port = int(values.get("server-port", 25565))
                 return JavaServer.lookup(f"{host}:{port}", timeout=2).status().players.online
+            if game.id != "palworld":
+                return 0
             if not values.get("RESTAPIEnabled"):
                 return 0
             port = int(values.get("RESTAPIPort", 8212))
@@ -481,6 +517,24 @@ class GameRuntime:
             return f"Build {build_id}"
         return "已安装" if (self.install_dir(game_id) / "PalServer.sh").exists() else "未安装"
 
+    def installed_version_for(self, game: Any) -> str:
+        if game.id in {"palworld", "minecraft"}:
+            return self.installed_version(game.id)
+        adapter = getattr(game, "adapter", None) or {}
+        app_id = str(adapter.get("appId", ""))
+        candidates = [
+            self.install_dir(game.id).parent / f"steamapps/appmanifest_{app_id}.acf",
+            self.install_dir(game.id) / f"steamapps/appmanifest_{app_id}.acf",
+            self.install_dir(game.id).parent / f"appmanifest_{app_id}.acf",
+        ]
+        for path in candidates:
+            if path.exists():
+                match = re.search(r'"buildid"\s+"(\d+)"', path.read_text(errors="replace"))
+                if match:
+                    return f"Build {match.group(1)}"
+        executable = self.install_dir(game.id) / str(adapter.get("executable", ""))
+        return "已安装" if executable.is_file() else "未安装"
+
     def _refresh_latest_version(self, game_id: str) -> None:
         try:
             if game_id == "minecraft":
@@ -511,17 +565,32 @@ class GameRuntime:
         return "检查中"
         return value
 
+    def latest_version_for(self, game: Any) -> str:
+        if game.id in {"palworld", "minecraft"}:
+            return self.latest_version(game.id)
+        return "SteamCMD 管理"
+
     def status(self, game: Any, values: dict[str, Any]) -> dict[str, Any]:
         if not self.execute:
             samples = {
                 "palworld": {"installed": True, "running": True, "players": 3, "capacity": 16, "uptime": "2天 14小时", "cpu": 18, "memory": 5.7},
                 "minecraft": {"installed": True, "running": False, "players": 0, "capacity": 12, "uptime": "—", "cpu": 0, "memory": 0},
             }
-            return {**samples[game.id], "version": game.version, "latestVersion": game.latest_version}
-        running = self.is_running(game.id)
-        stats = self.process_stats(game.id) if running else {"cpu": 0, "memory": 0, "uptime": "—"}
-        capacity = int(values.get("ServerPlayerMaxNum" if game.id == "palworld" else "max-players", 0))
-        installed_version = self.installed_version(game.id)
+            sample = samples.get(
+                game.id,
+                {"installed": False, "running": False, "players": 0, "capacity": 0, "uptime": "—", "cpu": 0, "memory": 0},
+            )
+            return {**sample, "version": game.version, "buildId": "", "latestVersion": game.latest_version}
+        running = self.is_running(game)
+        stats = self.process_stats(game) if running else {"cpu": 0, "memory": 0, "uptime": "—"}
+        adapter = getattr(game, "adapter", None) or {}
+        capacity_key = (
+            "ServerPlayerMaxNum" if game.id == "palworld"
+            else "max-players" if game.id == "minecraft"
+            else adapter.get("capacityField", "")
+        )
+        capacity = int(values.get(capacity_key, 0) or 0)
+        installed_version = self.installed_version_for(game)
         if game.id == "palworld":
             installed_version = (
                 self.palworld_server_info(values, query_server=running).get("version")
@@ -534,6 +603,9 @@ class GameRuntime:
             "capacity": capacity,
             **stats,
             "version": installed_version,
-            "buildId": self.installed_build_id(game.id),
-            "latestVersion": self.latest_version(game.id),
+            "buildId": (
+                installed_version.removeprefix("Build ")
+                if installed_version.startswith("Build ") else self.installed_build_id(game.id)
+            ),
+            "latestVersion": self.latest_version_for(game),
         }

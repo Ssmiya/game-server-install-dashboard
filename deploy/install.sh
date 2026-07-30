@@ -23,6 +23,7 @@ validate_source_tree() {
   local required_file
   local required_files=(
     "app.py"
+    "community_packages.py"
     "production_runtime.py"
     "set-password.sh"
     "templates/index.html"
@@ -127,6 +128,7 @@ create_user_and_directories() {
 
   install -d -o root -g "${APP_USER}" -m 0750 "${APP_ROOT}"
   install -d -o "${APP_USER}" -g "${APP_USER}" -m 0750 "${DATA_ROOT}"
+  install -d -o root -g "${APP_USER}" -m 0770 "${GAME_ROOT}"
   for game in palworld minecraft; do
     for folder in server data config backups; do
       install -d -o "${APP_USER}" -g "${APP_USER}" -m 0750 "${GAME_ROOT}/${game}/${folder}"
@@ -272,6 +274,32 @@ ReadWritePaths=${GAME_ROOT}/minecraft
 [Install]
 WantedBy=multi-user.target
 EOF
+
+  cat > /etc/systemd/system/gamedash-community@.service <<EOF
+[Unit]
+Description=GameDeck Community Server %i
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=${APP_USER}
+Group=${APP_USER}
+Environment=HOME=/home/${APP_USER}
+ExecStart=/usr/local/libexec/gamedash-community-start %i
+Restart=on-failure
+RestartSec=10
+TimeoutStopSec=60
+LimitNOFILE=100000
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=${GAME_ROOT} /home/${APP_USER}
+
+[Install]
+WantedBy=multi-user.target
+EOF
 }
 
 write_helpers_and_sudoers() {
@@ -289,13 +317,80 @@ EOF
   chown root:root /usr/local/libexec/gamedash-minecraft-start
   chmod 0755 /usr/local/libexec/gamedash-minecraft-start
 
+  cat > /usr/local/libexec/gamedash-community-start <<'PYEOF'
+#!/usr/bin/env python3
+import json
+import os
+import re
+import sys
+from pathlib import Path
+
+game_id = sys.argv[1] if len(sys.argv) == 2 else ""
+if not re.fullmatch(r"[a-z][a-z0-9-]{2,31}", game_id):
+    raise SystemExit("invalid community game id")
+
+data_root = Path(os.environ.get("GAME_DASHBOARD_DATA", "__DATA_ROOT__"))
+game_root = Path(os.environ.get("GAME_ROOT", "__GAME_ROOT__"))
+package_root = data_root / "community-games" / game_id
+status = json.loads((package_root / "status.json").read_text(encoding="utf-8"))
+manifest = json.loads((package_root / "game.json").read_text(encoding="utf-8"))
+if status.get("status") != "approved" or manifest.get("id") != game_id:
+    raise SystemExit("community adapter is not approved")
+
+adapter = manifest["adapter"]
+server_root = (game_root / game_id / "server").resolve()
+executable = (server_root / adapter["executable"]).resolve()
+if server_root not in executable.parents or not executable.is_file():
+    raise SystemExit("declared server executable does not exist")
+
+values = {}
+config_path = (server_root / adapter["configName"]).resolve()
+if server_root not in config_path.parents:
+    raise SystemExit("invalid config path")
+if config_path.is_file():
+    for line in config_path.read_text(encoding="utf-8", errors="replace").splitlines():
+        if "=" in line and not line.lstrip().startswith(("#", ";")):
+            key, value = line.split("=", 1)
+            values[key.strip()] = value.strip()
+
+placeholder = re.compile(r"\{\{([A-Za-z0-9_.-]{1,80})\}\}")
+arguments = [
+    placeholder.sub(lambda match: values.get(match.group(1), ""), argument)
+    for argument in adapter.get("launchArgs", [])
+]
+os.chdir(server_root)
+os.execv(executable, [str(executable), *arguments])
+PYEOF
+  sed -i "s|__DATA_ROOT__|${DATA_ROOT}|g; s|__GAME_ROOT__|${GAME_ROOT}|g" \
+    /usr/local/libexec/gamedash-community-start
+  chown root:root /usr/local/libexec/gamedash-community-start
+  chmod 0755 /usr/local/libexec/gamedash-community-start
+
+  cat > /usr/local/sbin/gamedash-service-control <<EOF
+#!/bin/sh
+set -eu
+[ "\$#" -eq 2 ] || { echo "usage: gamedash-service-control ACTION GAME_ID" >&2; exit 2; }
+action="\$1"
+game_id="\$2"
+case "\${action}" in start|stop|restart) ;; *) echo "invalid action" >&2; exit 2 ;; esac
+case "\${game_id}" in
+  palworld|minecraft) unit="\${game_id}.service" ;;
+  *)
+    printf '%s' "\${game_id}" | grep -Eq '^[a-z][a-z0-9-]{2,31}\$' || { echo "invalid game id" >&2; exit 2; }
+    status_file="${DATA_ROOT}/community-games/\${game_id}/status.json"
+    manifest_file="${DATA_ROOT}/community-games/\${game_id}/game.json"
+    [ -r "\${manifest_file}" ] && grep -Eq '"status"[[:space:]]*:[[:space:]]*"approved"' "\${status_file}" ||
+      { echo "community adapter is not approved" >&2; exit 3; }
+    unit="gamedash-community@\${game_id}.service"
+    ;;
+esac
+exec /usr/bin/systemctl "\${action}" "\${unit}"
+EOF
+  chown root:root /usr/local/sbin/gamedash-service-control
+  chmod 0755 /usr/local/sbin/gamedash-service-control
+
   cat > /etc/sudoers.d/game-dashboard <<EOF
-${APP_USER} ALL=(root) NOPASSWD: /usr/bin/systemctl start palworld.service
-${APP_USER} ALL=(root) NOPASSWD: /usr/bin/systemctl stop palworld.service
-${APP_USER} ALL=(root) NOPASSWD: /usr/bin/systemctl restart palworld.service
-${APP_USER} ALL=(root) NOPASSWD: /usr/bin/systemctl start minecraft.service
-${APP_USER} ALL=(root) NOPASSWD: /usr/bin/systemctl stop minecraft.service
-${APP_USER} ALL=(root) NOPASSWD: /usr/bin/systemctl restart minecraft.service
+${APP_USER} ALL=(root) NOPASSWD: /usr/local/sbin/gamedash-service-control *
 EOF
   chmod 0440 /etc/sudoers.d/game-dashboard
   visudo -cf /etc/sudoers.d/game-dashboard
@@ -333,7 +428,7 @@ server {
     ssl_certificate_key /etc/game-dashboard/tls/dashboard.key;
     ssl_protocols TLSv1.2 TLSv1.3;
 
-    client_max_body_size 2m;
+    client_max_body_size 12m;
 
     location / {
         proxy_pass http://127.0.0.1:${INTERNAL_PORT};
